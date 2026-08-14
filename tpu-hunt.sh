@@ -132,15 +132,24 @@ attempt() {
 
   start=$(date +%s)
   set +e
+  # --quiet matters more than it looks: without it gcloud can stop to ask
+  # something ("API not enabled, enable and retry? (y/N)"), find no TTY, and
+  # bail in a few seconds. That reads as a mystery failure rather than a prompt.
   out=$(run_with_timeout "$WAIT_PER_ATTEMPT" \
     gcloud compute tpus tpu-vm create "$NODE_NAME" \
       --project="$PROJECT" --zone="$zone" \
       --accelerator-type="$accel" --version="$runtime" \
-      --description="$MARKER" \
+      --description="$MARKER" --quiet \
       --scopes=https://www.googleapis.com/auth/cloud-platform 2>&1)
   rc=$?
   set -e
   elapsed=$(( $(date +%s) - start ))
+
+  # Keep the full text. The CSV detail column is truncated for readability, so
+  # without this an OTHER classification is undebuggable after the fact.
+  mkdir -p "$STATE_DIR/raw"
+  printf '%s\n' "$out" \
+    > "$STATE_DIR/raw/$(date -u +%Y%m%dT%H%M%SZ)-$zone-$accel.log"
 
   if (( rc == 0 )) && [[ "$(node_state "$zone" "$NODE_NAME")" == "READY" ]]; then
     record "$zone" "$accel" "$runtime" "READY" "claimed in ${elapsed}s" "$elapsed"
