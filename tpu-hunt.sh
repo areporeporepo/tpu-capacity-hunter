@@ -29,7 +29,7 @@ NODE_NAME="${TPU_HUNT_NODE_NAME:-tpu-hunt-$(id -un)}"
 # node this tool did not create (e.g. a classmate's VM in a shared project).
 MARKER="managed-by=tpu-hunt"
 
-WAIT_PER_ATTEMPT="${TPU_HUNT_WAIT:-420}"   # seconds to let one create resolve
+WAIT_PER_ATTEMPT="${TPU_HUNT_WAIT:-900}"   # seconds to let one create resolve
 ROUND_SLEEP="${TPU_HUNT_SLEEP:-180}"       # seconds between full sweeps
 MAX_ROUNDS="${TPU_HUNT_ROUNDS:-0}"         # 0 = loop forever
 CLAIM_HOOK="${TPU_HUNT_HOOK:-}"            # command run after a claim
@@ -207,7 +207,16 @@ attempt() {
   fi
 
   if (( rc == 124 )); then
-    outcome="TIMEOUT"; detail="no resolution in ${WAIT_PER_ATTEMPT}s"
+    # Distinguish "still building" from "out of capacity". Measured the hard
+    # way: several nodes reached READY minutes after a too-short wait expired,
+    # so reporting those as NO_CAPACITY was wrong and deleting them threw away
+    # a slice that had in fact been granted.
+    if [[ "$(node_state "$zone" "$node")" == "CREATING" ]]; then
+      outcome="STILL_CREATING"
+      detail="admitted and building past ${WAIT_PER_ATTEMPT}s, capacity was granted"
+    else
+      outcome="TIMEOUT"; detail="no resolution in ${WAIT_PER_ATTEMPT}s"
+    fi
   else
     IFS='|' read -r outcome detail <<<"$(classify "$out")"
   fi
@@ -219,8 +228,13 @@ attempt() {
 
   [[ "$outcome" == "QUOTA_ZERO" ]] && blacklist_add "$zone" "$accel"
 
-  # Never leave a half-built node billing.
+  # Never leave a half-built node billing, but do not kill one that is still
+  # coming up: STILL_CREATING means capacity was granted and it may land.
   local st; st=$(node_state "$zone" "$node")
+  if [[ "$outcome" == "STILL_CREATING" ]]; then
+    log "leaving $node in $zone to finish; check with: $0 status"
+    return 1
+  fi
   if [[ -n "$st" && "$st" != "READY" ]]; then
     gcloud compute tpus tpu-vm delete "$node" --project="$PROJECT" \
       --zone="$zone" --quiet >/dev/null 2>&1 || true
