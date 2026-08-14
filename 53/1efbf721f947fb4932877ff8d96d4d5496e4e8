@@ -1,0 +1,23 @@
+benchmarks/RESULTS-2026-08-14.md
+  s_94f8f36002b2a4::t_e0bc605855be46 1-90
+canvas/publish_capacity.py
+  s_94f8f36002b2a4::t_12d039101fef65 1-272
+tpu-hunt.sh
+  s_94f8f36002b2a4::t_0a41d6d6a497ec 32,210-219,231-232,234-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "531efbf721f947fb4932877ff8d96d4d5496e4e8",
+  "prompts": {},
+  "sessions": {
+    "s_94f8f36002b2a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "105260e2-6098-474e-b38f-f9f481690874",
+        "model": "claude-opus-5"
+      },
+      "human_author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
