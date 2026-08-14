@@ -1,0 +1,28 @@
+tpu-hunt.sh
+  s_94f8f36002b2a4::t_17c5dae2350bbf 290-292
+  s_94f8f36002b2a4::t_b7bb4a0b93ed0c 133-168
+  s_94f8f36002b2a4::t_4875e91522cdf4 16,38,201-202,223,225,231-252,279-281,415-417,421
+  s_94f8f36002b2a4::t_12d1a661341e29 36-37,39-41
+  s_94f8f36002b2a4::t_e732ec5e3ab209 173
+  s_94f8f36002b2a4::t_1991302c5e5760 349-393
+  s_94f8f36002b2a4::t_c80900221dd66d 182,195,197
+README.md
+  s_94f8f36002b2a4::t_7b6d627d3e5a6b 40-42,48-78
+  s_94f8f36002b2a4::t_5d8976b248441f 79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f71607e4e3ba96f6ba3de58cc2ce7eb857861947",
+  "prompts": {},
+  "sessions": {
+    "s_94f8f36002b2a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "105260e2-6098-474e-b38f-f9f481690874",
+        "model": "claude-opus-5"
+      },
+      "human_author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
