@@ -37,10 +37,45 @@ Two quota facts that are easy to get wrong:
 ```bash
 ./tpu-hunt.sh census        # probe every candidate once, keep nothing, log results
 ./tpu-hunt.sh hunt          # sweep candidates until one is claimed, then stop
+./tpu-hunt.sh watch         # one bounded sweep, no-op if already holding: for schedulers
+./tpu-hunt.sh adopt         # keep a claim (cancels the auto-release)
+./tpu-hunt.sh reap          # release a claim nobody adopted before its lease expired
 ./tpu-hunt.sh queue         # park a Queued Resource request server-side instead
 ./tpu-hunt.sh status        # last claim, quota blacklist, recent attempts
 ./tpu-hunt.sh release ZONE  # delete the node this tool created
 ```
+
+### Always-on watching, without a surprise bill
+
+`watch` is the mode to schedule. It exits immediately if a claim is already
+held, so it never stacks up nodes, and every claim gets a **lease**:
+
+1. `watch` claims a slice, writes `~/.tpu-hunt/lease`, and notifies you
+   (macOS notification, plus `$TPU_HUNT_NOTIFY_CMD` for anything else).
+2. You run `adopt` to keep it.
+3. If you were asleep and never adopted it, the scheduled `reap` releases it
+   when the lease expires (default 30 minutes).
+
+That inversion is the point. Capacity appears at random hours, so you want to
+grab it unattended, but an unattended 16-chip hold is expensive. Lease plus
+reap gives you the grab without the runaway bill.
+
+### Multislice (ICI vs DCN)
+
+`TPU_HUNT_SLICES=2` claims N slices in one zone with **gang semantics**: all
+slices or none, releasing partial gangs. A half-claimed gang cannot produce a
+DCN measurement but bills just the same.
+
+```bash
+TPU_HUNT_SLICES=2 TPU_HUNT_NODE_NAME=dcn ./tpu-hunt.sh hunt   # 2 slices -> DCN
+```
+
+Useful framing if you are studying interconnect: the ICI-vs-DCN comparison
+needs *equal total chips in different slice counts*, not a big allocation. 8
+chips as `1 x v5litepod-8` against `2 x v5litepod-4` isolates the fabric
+exactly, and two 4-chip slices schedule far more easily than one 8-chip slice.
+Note also that chip count is not always the number in the name: `v5p-16` is 8
+chips, because v5p counts tensorcores and has 2 per chip.
 
 Edit `candidates.conf` to set the search order: zone, accelerator type, and
 optionally runtime version. Put zones in the same region as your data first,
@@ -61,6 +96,9 @@ All optional, all via environment:
 | `TPU_HUNT_SLEEP` | `180` | seconds between sweeps |
 | `TPU_HUNT_ROUNDS` | `0` (forever) | stop after N sweeps |
 | `TPU_HUNT_HOOK` | none | command to run after a claim |
+| `TPU_HUNT_SLICES` | `1` | number of slices to claim as a gang (multislice) |
+| `TPU_HUNT_LEASE` | `1800` | seconds before an unadopted claim is reaped |
+| `TPU_HUNT_NOTIFY_CMD` | none | extra notifier, gets `TPU_TITLE` and `TPU_MSG` |
 
 ### Claim hook
 

@@ -13,7 +13,7 @@
 # This script classifies the two, blacklists the hopeless zones, and keeps
 # retrying the rest until it claims a slice.
 #
-# Subcommands: census | hunt | queue | status | release
+# Subcommands: census | hunt | watch | adopt | reap | queue | status | release
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -33,6 +33,12 @@ WAIT_PER_ATTEMPT="${TPU_HUNT_WAIT:-420}"   # seconds to let one create resolve
 ROUND_SLEEP="${TPU_HUNT_SLEEP:-180}"       # seconds between full sweeps
 MAX_ROUNDS="${TPU_HUNT_ROUNDS:-0}"         # 0 = loop forever
 CLAIM_HOOK="${TPU_HUNT_HOOK:-}"            # command run after a claim
+NOTIFY_CMD="${TPU_HUNT_NOTIFY_CMD:-}"      # extra notifier (webhook, sms, ...)
+LEASE_SECS="${TPU_HUNT_LEASE:-1800}"       # auto-release a claim nobody adopts
+SLICES="${TPU_HUNT_SLICES:-1}"             # >1 for multislice DCN work
+
+LEASE_FILE="$STATE_DIR/lease"
+ADOPTED="$STATE_DIR/adopted"
 
 mkdir -p "$STATE_DIR"
 [[ -f "$LOG_CSV" ]] || echo "timestamp,zone,accel,runtime,outcome,detail,elapsed_s" > "$LOG_CSV"
@@ -124,10 +130,47 @@ node_state() {
     --format='value(state)' 2>/dev/null || true
 }
 
+# Chips per slice, which is not the number in the accelerator name for every
+# family: v5p counts tensorcores and there are 2 per chip, so v5p-16 is 8 chips.
+chips_in() {
+  local n="${1##*-}"
+  case "$1" in
+    v5p-*) echo $(( n / 2 )) ;;
+    *)     echo "$n" ;;
+  esac
+}
+
+notify() {
+  local title=$1 msg=$2
+  log "NOTIFY: $title -- $msg"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    osascript -e "display notification \"$msg\" with title \"$title\" sound name \"Glass\"" \
+      >/dev/null 2>&1 || true
+  fi
+  [[ -n "$NOTIFY_CMD" ]] && TPU_TITLE="$title" TPU_MSG="$msg" \
+    bash -c "$NOTIFY_CMD" >/dev/null 2>&1 || true
+  return 0
+}
+
+# A claim is worth money, so it gets a lease. If nobody adopts it before the
+# lease expires, `reap` releases it. That is what makes it safe to leave the
+# watcher running overnight.
+write_lease() {
+  local zone=$1 accel=$2
+  rm -f "$ADOPTED"
+  {
+    echo "ZONE=$zone"
+    echo "NODE=$NODE_NAME"
+    echo "ACCEL=$accel"
+    echo "EXPIRES_AT=$(( $(date +%s) + LEASE_SECS ))"
+  } > "$LEASE_FILE"
+}
+
 # Try one (zone, accel) pair. Returns 0 only if a node is READY and kept.
 # mode=claim keeps it; mode=probe deletes it again immediately.
 attempt() {
   local zone=$1 accel=$2 runtime=$3 mode=$4
+  local node="${5:-$NODE_NAME}"
   local start out rc outcome detail elapsed
 
   start=$(date +%s)
@@ -136,7 +179,7 @@ attempt() {
   # something ("API not enabled, enable and retry? (y/N)"), find no TTY, and
   # bail in a few seconds. That reads as a mystery failure rather than a prompt.
   out=$(run_with_timeout "$WAIT_PER_ATTEMPT" \
-    gcloud compute tpus tpu-vm create "$NODE_NAME" \
+    gcloud compute tpus tpu-vm create "$node" \
       --project="$PROJECT" --zone="$zone" \
       --accelerator-type="$accel" --version="$runtime" \
       --description="$MARKER" --quiet \
@@ -149,14 +192,14 @@ attempt() {
   # without this an OTHER classification is undebuggable after the fact.
   mkdir -p "$STATE_DIR/raw"
   printf '%s\n' "$out" \
-    > "$STATE_DIR/raw/$(date -u +%Y%m%dT%H%M%SZ)-$zone-$accel.log"
+    > "$STATE_DIR/raw/$(date -u +%Y%m%dT%H%M%SZ)-$zone-$accel-$node.log"
 
-  if (( rc == 0 )) && [[ "$(node_state "$zone" "$NODE_NAME")" == "READY" ]]; then
+  if (( rc == 0 )) && [[ "$(node_state "$zone" "$node")" == "READY" ]]; then
     record "$zone" "$accel" "$runtime" "READY" "claimed in ${elapsed}s" "$elapsed"
     log "READY: $accel in $zone (${elapsed}s)"
     if [[ "$mode" == "probe" ]]; then
-      log "probe mode, releasing $NODE_NAME"
-      gcloud compute tpus tpu-vm delete "$NODE_NAME" --project="$PROJECT" \
+      log "probe mode, releasing $node"
+      gcloud compute tpus tpu-vm delete "$node" --project="$PROJECT" \
         --zone="$zone" --quiet >/dev/null 2>&1 || true
       return 1
     fi
@@ -177,12 +220,34 @@ attempt() {
   [[ "$outcome" == "QUOTA_ZERO" ]] && blacklist_add "$zone" "$accel"
 
   # Never leave a half-built node billing.
-  local st; st=$(node_state "$zone" "$NODE_NAME")
+  local st; st=$(node_state "$zone" "$node")
   if [[ -n "$st" && "$st" != "READY" ]]; then
-    gcloud compute tpus tpu-vm delete "$NODE_NAME" --project="$PROJECT" \
+    gcloud compute tpus tpu-vm delete "$node" --project="$PROJECT" \
       --zone="$zone" --quiet >/dev/null 2>&1 || true
   fi
   return 1
+}
+
+# Multislice needs N slices at once, and a partial gang is worthless for a DCN
+# measurement while still costing money. So: all slices or none.
+attempt_gang() {
+  local zone=$1 accel=$2 runtime=$3 mode=$4
+  local i n ok=1 names=()
+  for ((i = 0; i < SLICES; i++)); do names+=("${NODE_NAME}-$i"); done
+  for n in "${names[@]}"; do
+    if ! attempt "$zone" "$accel" "$runtime" "$mode" "$n"; then ok=0; break; fi
+  done
+  if (( ok == 0 )); then
+    log "gang of $SLICES incomplete in $zone, releasing partial slices"
+    for n in "${names[@]}"; do
+      [[ -n "$(node_state "$zone" "$n")" ]] && \
+        gcloud compute tpus tpu-vm delete "$n" --project="$PROJECT" \
+          --zone="$zone" --quiet >/dev/null 2>&1 || true
+    done
+    return 1
+  fi
+  log "gang of $SLICES x $accel READY in $zone ($(( SLICES * $(chips_in "$accel") )) chips total)"
+  return 0
 }
 
 candidates() {
@@ -211,7 +276,9 @@ cmd_hunt() {
     log "=== round $round ==="
     while read -r zone accel runtime; do
       blacklisted "$zone" "$accel" && continue
-      if attempt "$zone" "$accel" "$runtime" claim; then
+      local claimer=attempt
+      (( SLICES > 1 )) && claimer=attempt_gang
+      if "$claimer" "$zone" "$accel" "$runtime" claim; then
         {
           echo "export TPU_NAME=$NODE_NAME"
           echo "export ZONE=$zone"
@@ -220,6 +287,9 @@ cmd_hunt() {
           echo "export TPU_CLAIMED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         } > "$CLAIMED_ENV"
         log "claim recorded in $CLAIMED_ENV"
+        write_lease "$zone" "$accel"
+        notify "TPU claimed: $accel" \
+          "$(chips_in "$accel") chips in $zone. Adopt within $((LEASE_SECS / 60))m or it auto-releases: tpu-hunt.sh adopt"
         if [[ -n "$CLAIM_HOOK" ]]; then
           log "running claim hook: $CLAIM_HOOK"
           TPU_NAME="$NODE_NAME" ZONE="$zone" TPU_ACCEL="$accel" \
@@ -276,6 +346,51 @@ cmd_status() {
   tail -12 "$LOG_CSV" | sed 's/^/  /'
 }
 
+# Keep hunting forever, but stop as soon as something is held, so the watcher
+# never stacks up claims. Scheduled every few minutes, this is the "always be
+# looking for chips" mode.
+cmd_watch() {
+  if [[ -f "$LEASE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$LEASE_FILE"
+    local st; st=$(node_state "$ZONE" "$NODE")
+    if [[ "$st" == "READY" ]]; then
+      log "already holding $ACCEL in $ZONE, nothing to do"
+      return 0
+    fi
+    log "lease references a node that is gone ($ZONE), clearing"
+    rm -f "$LEASE_FILE"
+  fi
+  MAX_ROUNDS=1 cmd_hunt
+}
+
+cmd_adopt() {
+  [[ -f "$LEASE_FILE" ]] || die "no active lease to adopt"
+  touch "$ADOPTED"
+  # shellcheck disable=SC1090
+  source "$LEASE_FILE"
+  log "adopted $ACCEL in $ZONE, auto-release cancelled"
+  log "release it yourself when done: $0 release $ZONE"
+}
+
+cmd_reap() {
+  [[ -f "$LEASE_FILE" ]] || { log "no lease, nothing to reap"; return 0; }
+  if [[ -f "$ADOPTED" ]]; then
+    log "lease was adopted, leaving it alone"
+    return 0
+  fi
+  # shellcheck disable=SC1090
+  source "$LEASE_FILE"
+  local now; now=$(date +%s)
+  if (( now < EXPIRES_AT )); then
+    log "lease on $ACCEL in $ZONE still valid for $(( (EXPIRES_AT - now) / 60 ))m"
+    return 0
+  fi
+  log "lease expired unadopted, releasing $NODE in $ZONE"
+  cmd_release "$ZONE" || true
+  notify "TPU released" "$ACCEL in $ZONE was never adopted, so it was freed"
+}
+
 cmd_release() {
   local zone=${1:-}
   [[ -n "$zone" ]] || die "usage: $0 release ZONE"
@@ -297,8 +412,11 @@ cmd_release() {
 case "${1:-hunt}" in
   census)  cmd_census ;;
   hunt)    cmd_hunt ;;
+  watch)   cmd_watch ;;
+  adopt)   cmd_adopt ;;
+  reap)    cmd_reap ;;
   queue)   cmd_queue ;;
   status)  cmd_status ;;
   release) shift; cmd_release "$@" ;;
-  *)       die "usage: $0 {census|hunt|queue|status|release ZONE}" ;;
+  *)       die "usage: $0 {census|hunt|watch|adopt|reap|queue|status|release ZONE}" ;;
 esac
