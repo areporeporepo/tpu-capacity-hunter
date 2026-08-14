@@ -1,0 +1,19 @@
+benchmarks/RESULTS-2026-08-14.md
+  s_94f8f36002b2a4::t_cd9adf9dca1676 189-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "3458c6f6279af9950e704bb7aa78e46274b40d8d",
+  "prompts": {},
+  "sessions": {
+    "s_94f8f36002b2a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "105260e2-6098-474e-b38f-f9f481690874",
+        "model": "claude-opus-5"
+      },
+      "human_author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
