@@ -1,0 +1,22 @@
+benchmarks/RESULTS-2026-08-14.md
+  s_94f8f36002b2a4::t_0cb707e46adbce 1,63,66-70,76-78,119,133,161,163-165,167
+  s_94f8f36002b2a4::t_7aa2058c523c56 5-45,48,53,55-56,59,64,71-72,74,79-83,85,87,89-105,107-109,111-114,122-132,134-147,151-156,159-160,162,166,168-169,171-173,175-177,182-188
+  s_94f8f36002b2a4::t_b1cb114b2e6931 65
+  s_94f8f36002b2a4::t_6aad02373a7e70 75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "99a3e3a660637f83e2629f4c475ad445327d9b02",
+  "prompts": {},
+  "sessions": {
+    "s_94f8f36002b2a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "105260e2-6098-474e-b38f-f9f481690874",
+        "model": "claude-opus-5"
+      },
+      "human_author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
