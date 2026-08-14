@@ -1,0 +1,21 @@
+# Linux / cluster head node scheduler.
+#
+# Install with:  crontab -e   (then paste one of the lines below)
+# Inspect with:  crontab -l
+#
+# Bounded sweeps every 10 minutes. Keep the runs bounded rather than using a
+# single infinite loop: if the head node reboots, cron restarts the hunt on its
+# own, and a claim landing between runs is left alone because tpu-hunt exits
+# early once a READY node exists.
+#
+# cron gets a nearly empty environment, so set PATH and point HOME at the user
+# whose gcloud credentials should be used.
+
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin
+HOME=/home/admin
+
+*/10 * * * * TPU_HUNT_ROUNDS=3 TPU_HUNT_SLEEP=120 TPU_HUNT_HOOK=$HOME/tpu-capacity-hunter/hooks/me344-claim.sh $HOME/tpu-capacity-hunter/tpu-hunt.sh hunt >> $HOME/.tpu-hunt/cron.log 2>&1
+
+# Capacity census once an hour instead, if you want the heatmap data and not a
+# live claim. This one keeps nothing running.
+# 7 * * * * $HOME/tpu-capacity-hunter/tpu-hunt.sh census >> $HOME/.tpu-hunt/census.log 2>&1

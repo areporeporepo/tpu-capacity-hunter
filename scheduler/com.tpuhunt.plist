@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS scheduler. Runs a bounded hunt every 10 minutes: three sweeps, then
+  exit, so a claim that lands between runs is never clobbered and the job never
+  wedges. tpu-hunt is idempotent, an existing READY node short-circuits.
+
+  Install:
+    cp scheduler/com.tpuhunt.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.tpuhunt.plist
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.tpuhunt.plist
+
+  Replace YOUR_USERNAME below, launchd does not expand ~ in ProgramArguments.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tpuhunt</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/YOUR_USERNAME/tpu-capacity-hunter/tpu-hunt.sh</string>
+    <string>hunt</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd starts with a minimal PATH, so gcloud must be reachable. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TPU_HUNT_ROUNDS</key>
+    <string>3</string>
+    <key>TPU_HUNT_SLEEP</key>
+    <string>120</string>
+    <key>TPU_HUNT_HOOK</key>
+    <string>/Users/YOUR_USERNAME/tpu-capacity-hunter/hooks/me344-claim.sh</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>600</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/.tpu-hunt/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/.tpu-hunt/launchd.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
