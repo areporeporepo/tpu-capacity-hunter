@@ -1,0 +1,26 @@
+.gitignore
+  h_ed8409725be97e 1-2
+README.md
+  h_ed8409725be97e 1-117
+candidates.conf
+  h_ed8409725be97e 1-37
+hooks/me344-claim.sh
+  h_ed8409725be97e 1-38
+scheduler/com.tpuhunt.plist
+  h_ed8409725be97e 1-52
+scheduler/crontab.example
+  h_ed8409725be97e 1-21
+tpu-hunt.sh
+  h_ed8409725be97e 1-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e1ac2c62574525338298ece02e2d5bb629da3088",
+  "prompts": {},
+  "humans": {
+    "h_ed8409725be97e": {
+      "author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
