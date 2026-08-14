@@ -1,0 +1,20 @@
+tpu-hunt.sh
+  s_94f8f36002b2a4::t_7d215896618aa1 135-137,142,148-152
+  s_94f8f36002b2a4::t_fa3dd7a5425186 153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "b03ffd3bb708686d11bcfc30e12e2cddd4704ee7",
+  "prompts": {},
+  "sessions": {
+    "s_94f8f36002b2a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "105260e2-6098-474e-b38f-f9f481690874",
+        "model": "claude-opus-5"
+      },
+      "human_author": "anh nguyen <anh.nqqq@icloud.com>"
+    }
+  }
+}
